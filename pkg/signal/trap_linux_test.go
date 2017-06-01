@@ -25,7 +25,7 @@ func TestTrap(t *testing.T) {
 	}
 	for k, v := range sigmap {
 		wd, _ := os.Getwd()
-		testHelperCode := wd + "/testhelper/main.go"
+		testHelperCode := wd + "/testfiles/main.go"
 		cmd := exec.Command("go", "build", "-o", "main", testHelperCode)
 		err := cmd.Run()
 		require.NoError(t, err)
