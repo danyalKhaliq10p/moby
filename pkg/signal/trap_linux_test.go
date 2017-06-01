@@ -1,4 +1,5 @@
 // +build linux
+
 package signal
 
 import (
@@ -22,41 +23,25 @@ func TestTrap(t *testing.T) {
 		"QUIT": syscall.SIGQUIT,
 		"INT":  os.Interrupt,
 	}
-	if os.Getenv("TEST_TRAP") == "1" {
-		defer time.Sleep(10 * time.Millisecond)
-		Trap(func() {
-			time.Sleep(10 * time.Millisecond)
-			os.Exit(99)
-		})
-		go func() {
-			p, err := os.FindProcess(os.Getpid())
-			require.NoError(t, err)
-			switch s := os.Getenv("SIGNAL_TYPE"); s {
-			case "TERM":
-				for {
-					p.Signal(sigmap[s])
-				}
-			case "QUIT":
-				p.Signal(sigmap[s])
-			case "INT":
-				p.Signal(sigmap[s])
-			}
-		}()
-		select {}
-	}
 	for k, v := range sigmap {
-		cmd := exec.Command(os.Args[0], "-test.run=TestTrap")
-		cmd.Env = append(os.Environ(), "TEST_TRAP=1", fmt.Sprintf("SIGNAL_TYPE=%s", k))
-		err := cmd.Start()
+		wd, _ := os.Getwd()
+		testHelperCode := wd + "/testhelper/main.go"
+		cmd := exec.Command("go", "build", "-o", "main", testHelperCode)
+		err := cmd.Run()
+		require.NoError(t, err)
+		cmd = exec.Command("./main")
+		cmd.Env = append(os.Environ(), fmt.Sprintf("SIGNAL_TYPE=%s", k))
+
+		err = cmd.Start()
 		require.NoError(t, err)
 		err = cmd.Wait()
 		if e, ok := err.(*exec.ExitError); ok {
 			code := e.Sys().(syscall.WaitStatus).ExitStatus()
 			switch k {
 			case "TERM", "QUIT":
-				assert.Equal(t, code, (128 + int(v.(syscall.Signal))))
+				assert.Equal(t, (128 + int(v.(syscall.Signal))), code)
 			case "INT":
-				assert.Equal(t, code, 99)
+				assert.Equal(t, 99, code)
 			}
 			continue
 		}
