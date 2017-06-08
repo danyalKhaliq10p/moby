@@ -8,6 +8,7 @@ import (
 	"github.com/docker/docker/pkg/plugingetter"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
+
 )
 
 func TestMiddleware(t *testing.T) {
