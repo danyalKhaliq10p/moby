@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"fmt"
 	"math/big"
 	"net/http"
 	"testing"
@@ -15,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPeerCertificate_MarshalJSON(t *testing.T) {
+func TestPeerCertificateMarshalJSON(t *testing.T) {
 	template := &x509.Certificate{
 		IsCA: true,
 		BasicConstraintsValid: true,
@@ -31,29 +30,24 @@ func TestPeerCertificate_MarshalJSON(t *testing.T) {
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 	}
-
 	// generate private key
 	privatekey, err := rsa.GenerateKey(rand.Reader, 2048)
-
-	if err != nil {
-		fmt.Println(err)
-	}
-
+	require.NoError(t, err)
 	publickey := &privatekey.PublicKey
 
 	// create a self-signed certificate. template = parent
 	var parent = template
 	raw, err := x509.CreateCertificate(rand.Reader, template, parent, publickey, privatekey)
+	require.NoError(t, err)
 
-	if err != nil {
-		fmt.Println(err)
-	}
+	cert, err := x509.ParseCertificate(raw)
+	require.NoError(t, err)
 
-	cert, _ := x509.ParseCertificate(raw)
 	var certs = []*x509.Certificate{cert}
-
 	addr := "www.authz.com/auth"
-	req, _ := http.NewRequest("GET", addr, nil)
+	req, err := http.NewRequest("GET", addr, nil)
+	require.NoError(t, err)
+
 	req.RequestURI = addr
 	req.TLS = &tls.ConnectionState{}
 	req.TLS.PeerCertificates = certs
@@ -63,9 +57,8 @@ func TestPeerCertificate_MarshalJSON(t *testing.T) {
 		pcObj := PeerCertificate(*c)
 
 		t.Run("Marshalling :", func(t *testing.T) {
-			x, err := pcObj.MarshalJSON()
-			raw = x
-			require.NotNil(t, x)
+			raw, err = pcObj.MarshalJSON()
+			require.NotNil(t, raw)
 			require.Nil(t, err)
 		})
 

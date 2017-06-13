@@ -1,28 +1,28 @@
+// +build !windows
 package authorization
 
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/docker/docker/pkg/plugingetter"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
-
 )
 
 func TestMiddleware(t *testing.T) {
 	pluginNames := []string{"testPlugin1", "testPlugin2"}
 	var pluginGetter plugingetter.PluginGetter
 	m := NewMiddleware(pluginNames, pluginGetter)
-	authPlugins := m.GetAuthzPlugins()
+	authPlugins := m.getAuthzPlugins()
 	require.Equal(t, 2, len(authPlugins))
 	require.EqualValues(t, pluginNames[0], authPlugins[0].Name())
 	require.EqualValues(t, pluginNames[1], authPlugins[1].Name())
-
 }
 
-func TestMiddleware_WrapHandler(t *testing.T) {
+func TestMiddlewareWrapHandler(t *testing.T) {
 	server := authZPluginTestServer{t: t}
 	server.start()
 	defer server.stop()
@@ -31,17 +31,17 @@ func TestMiddleware_WrapHandler(t *testing.T) {
 	pluginNames := []string{authZPlugin.name}
 
 	var pluginGetter plugingetter.PluginGetter
-	m := NewMiddleware(pluginNames, pluginGetter)
+	middleWare := NewMiddleware(pluginNames, pluginGetter)
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
 
 		return nil
 	}
 
 	authList := []Plugin{authZPlugin}
-	m.SetPlugins([]string{"My Test Plugin"})
-	m.SetAuthzPlugins(authList)
-	h := m.WrapHandler(handler)
-	require.NotNil(t, h)
+	middleWare.SetPlugins([]string{"My Test Plugin"})
+	middleWare.SetAuthzPlugins(authList)
+	mdHandler := middleWare.WrapHandler(handler)
+	require.NotNil(t, mdHandler)
 
 	addr := "www.authz.com/auth"
 	req, _ := http.NewRequest("GET", addr, nil)
@@ -56,8 +56,8 @@ func TestMiddleware_WrapHandler(t *testing.T) {
 			Allow: false,
 			Msg:   "Server Auth Not Allowed",
 		}
-		if err := h(ctx, resp, req, map[string]string{}); err != nil {
-			t.Log(err.Error())
+		if err := mdHandler(ctx, resp, req, map[string]string{}); err == nil {
+			require.Error(t, err)
 		}
 
 	})
@@ -67,8 +67,8 @@ func TestMiddleware_WrapHandler(t *testing.T) {
 			Allow: true,
 			Msg:   "Server Auth Allowed",
 		}
-		if err := h(ctx, resp, req, map[string]string{}); err != nil {
-			t.Log(err.Error())
+		if err := mdHandler(ctx, resp, req, map[string]string{}); err != nil {
+			require.NoError(t, err)
 		}
 
 	})
@@ -76,26 +76,33 @@ func TestMiddleware_WrapHandler(t *testing.T) {
 }
 
 func TestNewResponseModifier(t *testing.T) {
-	r := httptest.NewRecorder()
+	recorder := httptest.NewRecorder()
+	modifier := NewResponseModifier(recorder)
+	modifier.Header().Set("H1", "V1")
+	modifier.Write([]byte("body"))
+	require.False(t, modifier.Hijacked())
+	modifier.WriteHeader(http.StatusInternalServerError)
+	require.NotNil(t, modifier.RawBody())
 
-	m := NewResponseModifier(r)
-	m.Header().Set("h1", "v1")
-	m.Write([]byte("body"))
-
-	require.False(t, m.Hijacked())
-
-	m.WriteHeader(http.StatusInternalServerError)
-	require.NotNil(t, m.RawBody())
-
-	x, err := m.RawHeaders()
-	require.NotNil(t, x)
+	raw, err := modifier.RawHeaders()
+	require.NotNil(t, raw)
 	require.Nil(t, err)
 
-	m.Flush()
-	m.FlushAll()
+	headerData := strings.Split(strings.TrimSpace(string(raw)), ":")
+	require.EqualValues(t, "H1", strings.TrimSpace(headerData[0]))
+	require.EqualValues(t, "V1", strings.TrimSpace(headerData[1]))
 
-	if r.Header().Get("h1") != "v1" {
-		t.Fatalf("Header value must exists %s", r.Header().Get("h1"), x)
+	modifier.Flush()
+	modifier.FlushAll()
+
+	if recorder.Header().Get("H1") != "V1" {
+		t.Fatalf("Header value must exists %s", recorder.Header().Get("H1"), raw)
 	}
 
+}
+
+func (m *Middleware) SetAuthzPlugins(plugins []Plugin) {
+	m.mu.Lock()
+	m.plugins = plugins
+	m.mu.Unlock()
 }
