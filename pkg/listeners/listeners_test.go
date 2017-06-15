@@ -5,6 +5,7 @@ package listeners
 import (
 	"crypto/tls"
 	"flag"
+	"io/ioutil"
 	"net"
 	"os"
 	"strconv"
@@ -34,26 +35,27 @@ func TestInitForUnix(t *testing.T) {
 	RequiresRoot(t)
 
 	proto := "unix"
-	addr := "/tmp/example.sock"
+	addr, err := ioutil.TempFile("", "example.sock")
+	require.NoError(t, err)
 	tlsConfig := tlsconfig.ServerDefault()
 
 	garbageGroupName := "garbage"
 
-	ls, serverConfig, err := commonConfig(proto, addr, garbageGroupName, tlsConfig)
+	ls, serverConfig, err := commonConfig(proto, addr.Name(), garbageGroupName, tlsConfig)
 	assert.Equal(t, "group "+garbageGroupName+" not found", err.Error())
 
-	ls, serverConfig, err = commonConfig(proto, addr, "root", tlsConfig)
+	ls, serverConfig, err = commonConfig(proto, addr.Name(), "root", tlsConfig)
 	require.NoError(t, err)
 
-	serverCommonConfig(ls, proto, addr, serverConfig)
+	serverCommonConfig(ls, proto, addr.Name(), serverConfig)
 
-	errClient := validateClient(proto, addr)
+	errClient := validateClient(proto, addr.Name())
 	require.NoError(t, errClient)
 }
 
 func TestInitForTCP(t *testing.T) {
 	proto := "tcp"
-	addr := "127.0.0.1:4004"
+	addr := "127.0.0.1:0"
 
 	tlsConfig := tlsconfig.ServerDefault()
 	ls, serverConfig, err := commonConfig(proto, addr, "root", tlsConfig)
