@@ -4,6 +4,7 @@ package listeners
 
 import (
 	"crypto/tls"
+	"errors"
 	"flag"
 	"io/ioutil"
 	"net"
@@ -36,6 +37,8 @@ func TestInitForUnix(t *testing.T) {
 
 	proto := "unix"
 	addr, err := ioutil.TempFile("", "example.sock")
+	defer os.Remove(addr.Name())
+
 	require.NoError(t, err)
 	tlsConfig := tlsconfig.ServerDefault()
 
@@ -47,7 +50,8 @@ func TestInitForUnix(t *testing.T) {
 	ls, serverConfig, err = commonConfig(proto, addr.Name(), "root", tlsConfig)
 	require.NoError(t, err)
 
-	serverCommonConfig(ls, proto, addr.Name(), serverConfig)
+	server := serverCommonConfig(ls, proto, addr.Name(), serverConfig)
+	defer server.Close()
 
 	errClient := validateClient(proto, addr.Name())
 	require.NoError(t, errClient)
@@ -55,13 +59,15 @@ func TestInitForUnix(t *testing.T) {
 
 func TestInitForTCP(t *testing.T) {
 	proto := "tcp"
-	addr := "127.0.0.1:0"
+	portNum := GetFreePort()
+	addr := "127.0.0.1:" + strconv.Itoa(portNum)
 
 	tlsConfig := tlsconfig.ServerDefault()
 	ls, serverConfig, err := commonConfig(proto, addr, "root", tlsConfig)
 	require.NoError(t, err)
 
-	serverCommonConfig(ls, proto, addr, serverConfig)
+	server := serverCommonConfig(ls, proto, addr, serverConfig)
+	defer server.Close()
 
 	errClient := validateClient(proto, addr)
 	require.NoError(t, errClient)
@@ -107,8 +113,11 @@ func wrapListeners(proto string, ls []net.Listener) []net.Listener {
 
 func validateClient(proto string, address string) error {
 	conn, err := net.Dial(proto, address)
-	if err != nil && conn != nil {
+	if err != nil {
 		return err
+	}
+	if conn == nil {
+		return errors.New("connection could not be established")
 	}
 	return nil
 }
@@ -133,12 +142,23 @@ func commonConfig(proto string, addr string, socketGrp string, tlsConfig *tls.Co
 	return ls, serverConfig, err
 }
 
-func serverCommonConfig(ls []net.Listener, proto string, addr string, serverConfig *apiserver.Config) {
+func serverCommonConfig(ls []net.Listener, proto string, addr string, serverConfig *apiserver.Config) apiserver.Server {
 	ls = wrapListeners(proto, ls)
 	apiServer := apiserver.New(serverConfig)
 	apiServer.Accept(addr, ls...)
+	return *apiServer
+}
 
-	serveAPIWait := make(chan error)
-	go apiServer.Wait(serveAPIWait)
-	defer apiServer.Close()
+func GetFreePort() int {
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	if err != nil {
+		panic(err)
+	}
+
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		panic(err)
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
 }
