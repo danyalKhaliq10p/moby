@@ -14,31 +14,29 @@ func main() {
 		"QUIT": syscall.SIGQUIT,
 		"INT":  os.Interrupt,
 	}
-
-	defer time.Sleep(10 * time.Millisecond)
-
 	signal.Trap(func() {
 		time.Sleep(10 * time.Millisecond)
 		os.Exit(99)
 	})
-
 	go func() {
 		p, err := os.FindProcess(os.Getpid())
-
 		if err != nil {
 			panic(err)
 		}
 		s := os.Getenv("SIGNAL_TYPE")
+		multiple := os.Getenv("IF_MULTIPLE")
 		switch s {
-		case "TERM":
-			for {
+		case "TERM", "INT":
+			if multiple == "1" {
+				for {
+					p.Signal(sigmap[s])
+				}
+			} else {
 				p.Signal(sigmap[s])
 			}
 		case "QUIT":
 			p.Signal(sigmap[s])
-		case "INT":
-			p.Signal(sigmap[s])
 		}
 	}()
-	select {}
+	time.Sleep(2 * time.Second)
 }

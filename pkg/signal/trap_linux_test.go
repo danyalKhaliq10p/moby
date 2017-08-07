@@ -11,16 +11,20 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTrap(t *testing.T) {
 	sigmap := map[string]os.Signal{
-		"TERM": syscall.SIGTERM,
-		"QUIT": syscall.SIGQUIT,
-		"INT":  os.Interrupt,
+		"TERM":          syscall.SIGTERM,
+		"QUIT":          syscall.SIGQUIT,
+		"INT":           os.Interrupt,
+		"TERM_MULTIPLE": syscall.SIGTERM,
+		"INT_MULTIPLE":  os.Interrupt,
 	}
+
 	for k, v := range sigmap {
 		tmpfile, err := ioutil.TempFile("", "main")
 		defer os.Remove(tmpfile.Name())
@@ -29,18 +33,31 @@ func TestTrap(t *testing.T) {
 		testHelperCode := wd + "/testfiles/main.go"
 		cmd := exec.Command("go", "build", "-o", tmpfile.Name(), testHelperCode)
 		err = cmd.Run()
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatal("Error in Running CMD GO Build", err.Error())
+		}
 		cmd = exec.Command(tmpfile.Name())
-		cmd.Env = append(os.Environ(), fmt.Sprintf("SIGNAL_TYPE=%s", k))
+		test := os.Getenv("IF_MULTIPLE")
+		require.NotNil(t, test)
+		if k == "TERM_MULTIPLE" || k == "INT_MULTIPLE" {
+			os.Setenv("IF_MULTIPLE", "1")
+			ifTerm := "TERM"
+			if k == "INT_MULTIPLE" {
+				ifTerm = "INT"
+			}
+			cmd.Env = append(os.Environ(), fmt.Sprintf("SIGNAL_TYPE=%s", ifTerm))
+		} else {
+			cmd.Env = append(os.Environ(), fmt.Sprintf("SIGNAL_TYPE=%s", k))
+		}
 		err = cmd.Start()
 		require.NoError(t, err)
 		err = cmd.Wait()
 		if e, ok := err.(*exec.ExitError); ok {
 			code := e.Sys().(syscall.WaitStatus).ExitStatus()
 			switch k {
-			case "TERM", "QUIT":
+			case "QUIT", "TERM_MULTIPLE", "INT_MULTIPLE":
 				assert.Equal(t, (128 + int(v.(syscall.Signal))), code)
-			case "INT":
+			case "INT", "TERM":
 				assert.Equal(t, 99, code)
 			}
 			continue
