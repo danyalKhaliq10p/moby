@@ -1,5 +1,4 @@
 // +build linux
-
 package signal
 
 import (
@@ -12,7 +11,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,14 +22,16 @@ func TestTrap(t *testing.T) {
 		"INT":  os.Interrupt,
 	}
 	for k, v := range sigmap {
+		tmpfile, err := ioutil.TempFile("", "main")
+		defer os.Remove(tmpfile.Name())
+		require.NoError(t, err)
 		wd, _ := os.Getwd()
 		testHelperCode := wd + "/testfiles/main.go"
-		cmd := exec.Command("go", "build", "-o", "main", testHelperCode)
-		err := cmd.Run()
+		cmd := exec.Command("go", "build", "-o", tmpfile.Name(), testHelperCode)
+		err = cmd.Run()
 		require.NoError(t, err)
-		cmd = exec.Command("./main")
+		cmd = exec.Command(tmpfile.Name())
 		cmd.Env = append(os.Environ(), fmt.Sprintf("SIGNAL_TYPE=%s", k))
-
 		err = cmd.Start()
 		require.NoError(t, err)
 		err = cmd.Wait()
